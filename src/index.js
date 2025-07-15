@@ -167,8 +167,142 @@ import {
     spinButtonText.y = spinButton.y + 25;
     uiContainer.addChild(spinButtonText);
 
-    // 🎲 Create temporary symbols (colored rectangles) until you get your asset pack
+    // 🎲 Load all your weather-themed symbols and animated scatters
+    let houseScatterFrames = [];
+    let hurricaneScatterFrames = [];
+    let stormSymbolTexture = null;
+    let radioSymbolTexture = null;
+    let waterSymbolTexture = null;
+    let windsockSymbolTexture = null;
+    let evacsignSymbolTexture = null;
+    let flashlightSymbolTexture = null;
+
+    // Load house scatter animation frames
+    try {
+        for (let i = 1; i <= 6; i++) {
+            const frameTexture = await Assets.load(`/frames/housescatter/housescatter_0${i}.png`);
+            houseScatterFrames.push(frameTexture);
+        }
+        console.log('✅ House scatter animation frames loaded successfully!');
+    } catch (error) {
+        console.log('❌ Could not load house scatter frames:', error);
+    }
+
+    // Load hurricane scatter animation frames
+    try {
+        for (let i = 1; i <= 6; i++) {
+            const frameTexture = await Assets.load(`/frames/hurricanescatter/hurricanescatter_0${i}.png`);
+            hurricaneScatterFrames.push(frameTexture);
+        }
+        console.log('✅ Hurricane scatter animation frames loaded successfully!');
+    } catch (error) {
+        console.log('❌ Could not load hurricane scatter frames:', error);
+    }
+
+    // Load storm symbol
+    try {
+        stormSymbolTexture = await Assets.load('/storm1.png');
+        console.log('✅ Storm symbol loaded successfully!');
+    } catch (error) {
+        console.log('❌ Could not load storm1.png:', error);
+    }
+
+    // Load radio symbol
+    try {
+        radioSymbolTexture = await Assets.load('/radio_frame_001.png');
+        console.log('✅ Radio symbol loaded successfully!');
+    } catch (error) {
+        console.log('❌ Could not load radio_frame_001.png:', error);
+    }
+
+    // Load water symbol
+    try {
+        waterSymbolTexture = await Assets.load('/water_frame_001.png');
+        console.log('✅ Water symbol loaded successfully!');
+    } catch (error) {
+        console.log('❌ Could not load water_frame_001.png:', error);
+    }
+
+    // Load windsock symbol
+    try {
+        windsockSymbolTexture = await Assets.load('/windsock_frame_001.png');
+        console.log('✅ Windsock symbol loaded successfully!');
+    } catch (error) {
+        console.log('❌ Could not load windsock_frame_001.png:', error);
+    }
+
+    // Load evacuation sign symbol
+    try {
+        evacsignSymbolTexture = await Assets.load('/evacsign_frame_001.png');
+        console.log('✅ Evacuation sign symbol loaded successfully!');
+    } catch (error) {
+        console.log('❌ Could not load evacsign_frame_001.png:', error);
+    }
+
+    // Load flashlight symbol
+    try {
+        flashlightSymbolTexture = await Assets.load('/flashlight_frame_001.png');
+        console.log('✅ Flashlight symbol loaded successfully!');
+    } catch (error) {
+        console.log('❌ Could not load flashlight_frame_001.png:', error);
+    }
+
     function createTempSymbol(symbolType) {
+        // Create animated scatter symbols
+        if (houseScatterFrames.length > 0 && symbolType === 0) {
+            // Create animated sprite for house scatter
+            const animatedSprite = new Container();
+            const sprite = new Sprite(houseScatterFrames[0]);
+            sprite.width = SYMBOL_WIDTH;
+            sprite.height = SYMBOL_HEIGHT;
+            animatedSprite.addChild(sprite);
+
+            // Add animation data
+            animatedSprite.isScatter = true;
+            animatedSprite.frames = houseScatterFrames;
+            animatedSprite.currentFrame = 0;
+            animatedSprite.sprite = sprite;
+
+            return animatedSprite;
+        }
+
+        if (hurricaneScatterFrames.length > 0 && symbolType === 1) {
+            // Create animated sprite for hurricane scatter
+            const animatedSprite = new Container();
+            const sprite = new Sprite(hurricaneScatterFrames[0]);
+            sprite.width = SYMBOL_WIDTH;
+            sprite.height = SYMBOL_HEIGHT;
+            animatedSprite.addChild(sprite);
+
+            // Add animation data
+            animatedSprite.isScatter = true;
+            animatedSprite.frames = hurricaneScatterFrames;
+            animatedSprite.currentFrame = 0;
+            animatedSprite.sprite = sprite;
+
+            return animatedSprite;
+        }
+
+        if (stormSymbolTexture && symbolType === 2) {
+            return stormSymbolTexture;
+        }
+        if (radioSymbolTexture && symbolType === 3) {
+            return radioSymbolTexture;
+        }
+        if (waterSymbolTexture && symbolType === 4) {
+            return waterSymbolTexture;
+        }
+        if (windsockSymbolTexture && symbolType === 5) {
+            return windsockSymbolTexture;
+        }
+        if (evacsignSymbolTexture && symbolType === 6) {
+            return evacsignSymbolTexture;
+        }
+        if (flashlightSymbolTexture && symbolType === 7) {
+            return flashlightSymbolTexture;
+        }
+
+        // Otherwise create temporary colored symbols
         const colors = [
             0xff6b6b, 0x4ecdc4, 0x45b7d1, 0x96ceb4, 0xfeca57,
             0xff9ff3, 0x54a0ff, 0x5f27cd, 0x00d2d3, 0xff9f43
@@ -211,6 +345,34 @@ import {
         symbolTextures.push(createTempSymbol(i));
     }
 
+    // 🎬 Scatter animation system
+    function startScatterAnimation(symbol) {
+        if (!symbol.isScatter || !symbol.frames || symbol.frames.length === 0) return;
+
+        let frameIndex = 0;
+        let loopCount = 0;
+        const maxLoops = 2; // Loop twice as requested
+
+        const animationInterval = setInterval(() => {
+            // Update sprite texture
+            symbol.sprite.texture = symbol.frames[frameIndex];
+
+            frameIndex++;
+
+            // Check if we completed a full cycle
+            if (frameIndex >= symbol.frames.length) {
+                frameIndex = 0;
+                loopCount++;
+
+                // Stop after 2 loops
+                if (loopCount >= maxLoops) {
+                    clearInterval(animationInterval);
+                    console.log('🎬 Scatter animation completed!');
+                }
+            }
+        }, 150); // Animation speed - adjust as needed
+    }
+
     // 🎰 Initialize reels and symbols
     for (let col = 0; col < COLS; col++) {
         const reelContainer = new Container();
@@ -222,11 +384,19 @@ import {
         slots[col] = [];
         for (let row = 0; row < ROWS; row++) {
             const symbolTexture = symbolTextures[Math.floor(Math.random() * symbolTextures.length)];
-            const symbol = new Sprite(symbolTexture);
+            let symbol;
+
+            // Handle animated scatter symbols differently
+            if (symbolTexture.isScatter) {
+                symbol = symbolTexture; // Use the container directly
+            } else {
+                symbol = new Sprite(symbolTexture);
+                symbol.width = SYMBOL_WIDTH;
+                symbol.height = SYMBOL_HEIGHT;
+            }
+
             symbol.x = 0;
             symbol.y = row * (SYMBOL_HEIGHT + SYMBOL_SPACING);
-            symbol.width = SYMBOL_WIDTH;
-            symbol.height = SYMBOL_HEIGHT;
             reelContainer.addChild(symbol);
             slots[col][row] = symbol;
         }
@@ -237,7 +407,7 @@ import {
         balanceText.text = `Balance: $${balance}`;
     }
 
-    // 🎮 Spin function
+    // 🎮 Enhanced Spin function with reel animations
     function spin() {
         if (isSpinning || balance < currentBet) return;
 
@@ -246,26 +416,101 @@ import {
         isSpinning = true;
         spinButtonText.text = 'SPINNING...';
 
-        // Simple spin animation - replace symbols after 1 second
-        setTimeout(() => {
-            for (let col = 0; col < COLS; col++) {
+        // 🎰 Create spinning animation for each reel
+        const spinDurations = [2000, 2500, 3000, 3500, 4000]; // Each reel stops at different times
+        const reelAnimations = [];
+
+        for (let col = 0; col < COLS; col++) {
+            let spinCount = 0;
+            const maxSpins = 20 + (col * 5); // More spins for later reels
+
+            const reelSpin = setInterval(() => {
+                // Cycle through symbols rapidly during spin
                 for (let row = 0; row < ROWS; row++) {
-                    const newTexture = symbolTextures[Math.floor(Math.random() * symbolTextures.length)];
-                    slots[col][row].texture = newTexture;
+                    const randomSymbolIndex = Math.floor(Math.random() * symbolTextures.length);
+                    const randomTexture = symbolTextures[randomSymbolIndex];
+
+                    // Always remove old symbol first
+                    reelContainers[col].removeChild(slots[col][row]);
+
+                    let newSymbol;
+                    // Create fresh symbol based on type
+                    if (randomTexture.isScatter) {
+                        // Create new animated scatter symbol
+                        newSymbol = createTempSymbol(randomSymbolIndex);
+                    } else {
+                        // Create new static symbol
+                        newSymbol = new Sprite(randomTexture);
+                        newSymbol.width = SYMBOL_WIDTH;
+                        newSymbol.height = SYMBOL_HEIGHT;
+                    }
+
+                    newSymbol.x = 0;
+                    newSymbol.y = row * (SYMBOL_HEIGHT + SYMBOL_SPACING);
+                    reelContainers[col].addChild(newSymbol);
+                    slots[col][row] = newSymbol;
                 }
-            }
 
-            isSpinning = false;
-            spinButtonText.text = 'SPIN';
+                spinCount++;
 
-            // Simple win check - add some money back
-            const winAmount = Math.floor(Math.random() * currentBet * 3);
-            if (winAmount > 0) {
-                balance += winAmount;
-                updateBalanceDisplay();
-                console.log(`Win: $${winAmount}!`);
-            }
-        }, 1000);
+                // Stop this reel after its duration
+                if (spinCount >= maxSpins) {
+                    clearInterval(reelSpin);
+
+                    // Set final symbols for this reel
+                    for (let row = 0; row < ROWS; row++) {
+                        const finalSymbolIndex = Math.floor(Math.random() * symbolTextures.length);
+                        const finalTexture = symbolTextures[finalSymbolIndex];
+
+                        // Always remove old symbol first
+                        reelContainers[col].removeChild(slots[col][row]);
+
+                        let finalSymbol;
+                        // Create fresh final symbol
+                        if (finalTexture.isScatter) {
+                            // Create new animated scatter symbol
+                            finalSymbol = createTempSymbol(finalSymbolIndex);
+
+                            // Start scatter animation after reel stops
+                            setTimeout(() => {
+                                startScatterAnimation(finalSymbol);
+                            }, 500);
+                        } else {
+                            // Create new static symbol
+                            finalSymbol = new Sprite(finalTexture);
+                            finalSymbol.width = SYMBOL_WIDTH;
+                            finalSymbol.height = SYMBOL_HEIGHT;
+                        }
+
+                        finalSymbol.x = 0;
+                        finalSymbol.y = row * (SYMBOL_HEIGHT + SYMBOL_SPACING);
+                        reelContainers[col].addChild(finalSymbol);
+                        slots[col][row] = finalSymbol;
+                    }
+
+                    // Add reel stop sound effect (visual feedback)
+                    console.log(`🎰 Reel ${col + 1} stopped!`);
+
+                    // Check if all reels have stopped
+                    reelAnimations[col] = true;
+                    if (reelAnimations.filter(stopped => stopped).length === COLS) {
+                        // All reels stopped - game over
+                        isSpinning = false;
+                        spinButtonText.text = 'SPIN';
+
+                        // Check for wins
+                        const winAmount = Math.floor(Math.random() * currentBet * 3);
+                        if (winAmount > 0) {
+                            balance += winAmount;
+                            updateBalanceDisplay();
+                            console.log(`🎉 Win: $${winAmount}!`);
+                        }
+                    }
+                }
+            }, 100 - (col * 10)); // Slightly different speeds for visual variety
+
+            reelAnimations[col] = false;
+        }
     }
 
     // Event handlers
