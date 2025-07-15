@@ -91,6 +91,19 @@ import {
     const gridStartY = (SCREEN_HEIGHT - GRID_HEIGHT) / 2 + 75; // Slightly lower + move down more
     slotContainer.x = gridStartX;
     slotContainer.y = gridStartY;
+
+    // 🎭 Create mask to clip symbols inside the frame
+    const slotMask = new Graphics();
+    slotMask.fill(0xff0000); // Color doesn't matter for masks
+    slotMask.rect(0, 10, GRID_WIDTH, GRID_HEIGHT - 10); // Start 10px down, reduce height by 10px
+    slotMask.fill();
+    slotMask.x = gridStartX;
+    slotMask.y = gridStartY;
+
+    // Apply mask to slot container so symbols are clipped to frame area
+    slotContainer.mask = slotMask;
+
+    app.stage.addChild(slotMask); // Add mask to stage
     app.stage.addChild(slotContainer);
 
     // 🎮 Create simple UI
