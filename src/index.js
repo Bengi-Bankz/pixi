@@ -59,7 +59,7 @@ import {
     let slots = [];
     let reelContainers = [];
 
-    // 🖼️ Load your new background
+    // 🖼️ Load your board background
     let backgroundSprite = null;
     try {
         const backgroundTexture = await Assets.load('/board_frame_001.png');
@@ -72,10 +72,10 @@ import {
         backgroundSprite.y = 0;
 
         app.stage.addChild(backgroundSprite);
-        console.log('✅ Weather-themed background loaded successfully!');
+        console.log('✅ Hurricane Chase background loaded successfully!');
     } catch (error) {
         console.log('❌ Background could not be loaded:', error);
-        console.log('Place board_frame_001.png in the public folder');
+        console.log('Make sure board_frame_001.png is in the public folder');
         // Fallback dark background
         const fallbackBg = new Graphics();
         fallbackBg.fill(0x1a1a2e);
@@ -167,84 +167,45 @@ import {
     spinButtonText.y = spinButton.y + 25;
     uiContainer.addChild(spinButtonText);
 
-    // 🎲 Load all your weather-themed symbols and animated scatters
+    // 🎲 Load all your restructured assets using sprite sheets
+    let scatterSpriteSheet = null;
+    let symbolSpriteSheet = null;
     let houseScatterFrames = [];
     let hurricaneScatterFrames = [];
-    let stormSymbolTexture = null;
-    let radioSymbolTexture = null;
-    let waterSymbolTexture = null;
-    let windsockSymbolTexture = null;
-    let evacsignSymbolTexture = null;
-    let flashlightSymbolTexture = null;
 
-    // Load house scatter animation frames
+    // Load scatter sprite sheet with animations
     try {
+        scatterSpriteSheet = await Assets.load('/scatter-sprite-animation-seq/scatter.png.json');
+
+        // Extract house scatter animation frames
         for (let i = 1; i <= 6; i++) {
-            const frameTexture = await Assets.load(`/frames/housescatter/housescatter_0${i}.png`);
-            houseScatterFrames.push(frameTexture);
+            const frameName = `housescatter_0${i}.png`;
+            if (scatterSpriteSheet.textures[frameName]) {
+                houseScatterFrames.push(scatterSpriteSheet.textures[frameName]);
+            }
         }
-        console.log('✅ House scatter animation frames loaded successfully!');
-    } catch (error) {
-        console.log('❌ Could not load house scatter frames:', error);
-    }
 
-    // Load hurricane scatter animation frames
-    try {
+        // Extract hurricane scatter animation frames
         for (let i = 1; i <= 6; i++) {
-            const frameTexture = await Assets.load(`/frames/hurricanescatter/hurricanescatter_0${i}.png`);
-            hurricaneScatterFrames.push(frameTexture);
+            const frameName = `hurricanescatter_0${i}.png`;
+            if (scatterSpriteSheet.textures[frameName]) {
+                hurricaneScatterFrames.push(scatterSpriteSheet.textures[frameName]);
+            }
         }
-        console.log('✅ Hurricane scatter animation frames loaded successfully!');
+
+        console.log('✅ Scatter sprite sheet loaded successfully!');
+        console.log(`✅ House scatter frames: ${houseScatterFrames.length}`);
+        console.log(`✅ Hurricane scatter frames: ${hurricaneScatterFrames.length}`);
     } catch (error) {
-        console.log('❌ Could not load hurricane scatter frames:', error);
+        console.log('❌ Could not load scatter sprite sheet:', error);
     }
 
-    // Load storm symbol
+    // Load symbol sprite sheet
     try {
-        stormSymbolTexture = await Assets.load('/storm1.png');
-        console.log('✅ Storm symbol loaded successfully!');
+        symbolSpriteSheet = await Assets.load('/symbol-sprites/symbols.png.json');
+        console.log('✅ Symbol sprite sheet loaded successfully!');
     } catch (error) {
-        console.log('❌ Could not load storm1.png:', error);
-    }
-
-    // Load radio symbol
-    try {
-        radioSymbolTexture = await Assets.load('/radio_frame_001.png');
-        console.log('✅ Radio symbol loaded successfully!');
-    } catch (error) {
-        console.log('❌ Could not load radio_frame_001.png:', error);
-    }
-
-    // Load water symbol
-    try {
-        waterSymbolTexture = await Assets.load('/water_frame_001.png');
-        console.log('✅ Water symbol loaded successfully!');
-    } catch (error) {
-        console.log('❌ Could not load water_frame_001.png:', error);
-    }
-
-    // Load windsock symbol
-    try {
-        windsockSymbolTexture = await Assets.load('/windsock_frame_001.png');
-        console.log('✅ Windsock symbol loaded successfully!');
-    } catch (error) {
-        console.log('❌ Could not load windsock_frame_001.png:', error);
-    }
-
-    // Load evacuation sign symbol
-    try {
-        evacsignSymbolTexture = await Assets.load('/evacsign_frame_001.png');
-        console.log('✅ Evacuation sign symbol loaded successfully!');
-    } catch (error) {
-        console.log('❌ Could not load evacsign_frame_001.png:', error);
-    }
-
-    // Load flashlight symbol
-    try {
-        flashlightSymbolTexture = await Assets.load('/flashlight_frame_001.png');
-        console.log('✅ Flashlight symbol loaded successfully!');
-    } catch (error) {
-        console.log('❌ Could not load flashlight_frame_001.png:', error);
+        console.log('❌ Could not load symbol sprite sheet:', error);
     }
 
     function createTempSymbol(symbolType) {
@@ -283,29 +244,37 @@ import {
             return animatedSprite;
         }
 
-        if (stormSymbolTexture && symbolType === 2) {
-            return stormSymbolTexture;
-        }
-        if (radioSymbolTexture && symbolType === 3) {
-            return radioSymbolTexture;
-        }
-        if (waterSymbolTexture && symbolType === 4) {
-            return waterSymbolTexture;
-        }
-        if (windsockSymbolTexture && symbolType === 5) {
-            return windsockSymbolTexture;
-        }
-        if (evacsignSymbolTexture && symbolType === 6) {
-            return evacsignSymbolTexture;
-        }
-        if (flashlightSymbolTexture && symbolType === 7) {
-            return flashlightSymbolTexture;
+        // Load symbols from sprite sheet
+        if (symbolSpriteSheet) {
+            const symbolNames = [
+                null, // skip 0 and 1 (used for scatters above)
+                null,
+                'storm1.png',                    // 2 - Storm
+                'radio_frame_001.png',           // 3 - Radio
+                'water_frame_001.png',           // 4 - Water
+                'windsock_frame_001.png',        // 5 - Windsock
+                'evacsign_frame_001.png',        // 6 - Evacuation Sign
+                'flashlight_frame_001.png',      // 7 - Flashlight
+                'ace_frame.png',                 // 8 - Ace
+                'king_frame.png',                // 9 - King
+                'queen_frame.png',               // 10 - Queen
+                'jack_frame.png',                // 11 - Jack
+                '10_frame.png'                   // 12 - Ten
+            ];
+
+            if (symbolType >= 2 && symbolType < symbolNames.length && symbolNames[symbolType]) {
+                const symbolTexture = symbolSpriteSheet.textures[symbolNames[symbolType]];
+                if (symbolTexture) {
+                    return symbolTexture;
+                }
+            }
         }
 
-        // Otherwise create temporary colored symbols
+        // Otherwise create temporary colored symbols as fallback
         const colors = [
             0xff6b6b, 0x4ecdc4, 0x45b7d1, 0x96ceb4, 0xfeca57,
-            0xff9ff3, 0x54a0ff, 0x5f27cd, 0x00d2d3, 0xff9f43
+            0xff9ff3, 0x54a0ff, 0x5f27cd, 0x00d2d3, 0xff9f43,
+            0xe74c3c, 0x2ecc71, 0x3498db
         ];
 
         // Create a container to hold both graphics and text
@@ -339,9 +308,23 @@ import {
         return app.renderer.generateTexture(symbolContainer);
     }
 
-    // Create symbol textures
+    // Create symbol textures - now includes all weather symbols + new card symbols
+    // Symbol mapping:
+    // 0: House Scatter (animated)
+    // 1: Hurricane Scatter (animated)  
+    // 2: Storm
+    // 3: Radio
+    // 4: Water
+    // 5: Windsock
+    // 6: Evacuation Sign
+    // 7: Flashlight
+    // 8: Ace
+    // 9: King
+    // 10: Queen
+    // 11: Jack
+    // 12: Ten
     const symbolTextures = [];
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 13; i++) { // Increased from 8 to 13 to include all symbols
         symbolTextures.push(createTempSymbol(i));
     }
 
