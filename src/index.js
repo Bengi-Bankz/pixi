@@ -58,6 +58,7 @@ import {
     let walkingWilds = [];
     let animatingWild = false;
     let cat5WildTexture = null;
+    let currentWildSprite = null; // Hold the wild sprite to move it
 
     // Background
     let backgroundSprite = null;
@@ -333,7 +334,7 @@ import {
 
     // ------- WALKING WILD ANIMATION SYSTEM -------
 
-    // Animate all symbols in the column dropping out
+    // Animate all symbols in the column dropping out, then do first wild drop
     function startWalkingWildDrop(col) {
         if (animatingWild) return;
         animatingWild = true;
@@ -401,6 +402,7 @@ import {
         wild.height = SYMBOL_HEIGHT;
         wild.x = 0;
         wild.y = (GRID_HEIGHT - SYMBOL_HEIGHT) / 2;
+        currentWildSprite = wild;
 
         // Start above panel for drop animation
         const startY = -SYMBOL_HEIGHT;
@@ -425,18 +427,71 @@ import {
         });
     }
 
-    function walkWildToNextCol() {
+    // Slide the wild and blue panel left one column, no trapdoor!
+    function slideWildToNextCol() {
         if (walkingWilds.length === 0) return;
         const prevCol = walkingWilds[0].col;
-        reelContainers[prevCol].removeChildren();
-        if (prevCol > 0) {
-            walkingWilds[0].col--;
-            startWalkingWildDrop(walkingWilds[0].col);
-        } else {
+        if (prevCol === 0) {
+            // Remove wild state if at leftmost
             walkingWilds = [];
+            return;
         }
+
+        const nextCol = prevCol - 1;
+        const prevContainer = reelContainers[prevCol];
+        const nextContainer = reelContainers[nextCol];
+
+        // Find the blue panel and wild in prevCol
+        const bluePanel = prevContainer.getChildByName('wild-panel-bg');
+        const wild = currentWildSprite;
+
+        if (!bluePanel || !wild) {
+            animatingWild = false;
+            return;
+        }
+
+        // Remove from prevCol
+        prevContainer.removeChild(bluePanel);
+        prevContainer.removeChild(wild);
+
+        // Set initial positions (fixed at start)
+        bluePanel.x = 0; bluePanel.y = 0;
+        wild.x = 0; wild.y = (GRID_HEIGHT - SYMBOL_HEIGHT) / 2;
+
+        // Add to nextCol, but start at prevCol's X for animation
+        nextContainer.addChild(bluePanel);
+        nextContainer.addChild(wild);
+
+        // Animate X from prevCol to nextCol in slotContainer space
+        const startX = reelContainers[prevCol].x;
+        const endX = reelContainers[nextCol].x;
+        let t = 0;
+        const duration = 24;
+        animatingWild = true;
+
+        // We'll animate by moving the wild/panel in nextCol from startX to endX, then snap to x=0
+        bluePanel.x = startX - endX;
+        wild.x = startX - endX;
+
+        app.ticker.add(function slideTicker() {
+            t++;
+            const interp = (startX - endX) * (1 - t / duration);
+            bluePanel.x = interp;
+            wild.x = interp;
+            if (t >= duration) {
+                bluePanel.x = 0;
+                wild.x = 0;
+                app.ticker.remove(slideTicker);
+                // Set slots in new col to wild, clear old
+                for (let row = 0; row < ROWS; row++) {
+                    slots[nextCol][row] = wild;
+                    slots[prevCol][row] = null;
+                }
+                walkingWilds[0].col = nextCol;
+                animatingWild = false;
+            }
+        });
     }
-    // -----------------------------------------------
 
     function updateBalanceDisplay() {
         balanceText.text = `Balance: $${balance}`;
@@ -446,9 +501,9 @@ import {
     function spin() {
         if (isSpinning || balance < currentBet || animatingWild) return;
 
-        // Animate wild walking left before spin
+        // If wild is on the board, slide it left instead of trapdoor
         if (walkingWilds.length > 0) {
-            walkWildToNextCol();
+            slideWildToNextCol();
             const checkWildAnim = setInterval(() => {
                 if (!animatingWild) {
                     clearInterval(checkWildAnim);
@@ -473,17 +528,40 @@ import {
             let spinCount = 0;
             const maxSpins = 20 + (col * 5);
 
+            const willWildSlideHere = walkingWilds.length > 0 && walkingWilds[0].col - 1 === col;
+            const isWildCol = walkingWilds.length > 0 && walkingWilds[0].col === col;
+
             const reelSpin = setInterval(() => {
-                const isWildReel = walkingWilds.length > 0 && walkingWilds[0].col === col;
+                // Don't randomize the destination or current wild column
+                if (isWildCol || willWildSlideHere) {
+                    spinCount++;
+                    if (spinCount >= maxSpins) {
+                        clearInterval(reelSpin);
+                        reelAnimations[col] = true;
+                        if (reelAnimations.filter(stopped => stopped).length === COLS) {
+                            isSpinning = false;
+                            spinButtonText.text = 'SPIN';
+                            const winAmount = Math.floor(Math.random() * currentBet * 3);
+                            if (winAmount > 0) {
+                                balance += winAmount;
+                                updateBalanceDisplay();
+                                console.log(`🎉 Win: $${winAmount}!`);
+                            }
+                            // Only spawn a wild if there isn't one
+                            if (!animatingWild && walkingWilds.length === 0 && Math.random() < 0.6 && cat5WildTexture) {
+                                const spawnCol = COLS - 1;
+                                walkingWilds = [{ col: spawnCol, stepsRemaining: spawnCol }];
+                                startWalkingWildDrop(spawnCol);
+                            }
+                        }
+                    }
+                    return;
+                }
 
                 for (let row = 0; row < ROWS; row++) {
-                    if (isWildReel) continue;
-
+                    reelContainers[col].removeChild(slots[col][row]);
                     const randomSymbolIndex = Math.floor(Math.random() * symbolTextures.length);
                     const randomTexture = symbolTextures[randomSymbolIndex];
-
-                    reelContainers[col].removeChild(slots[col][row]);
-
                     let newSymbol;
                     if (randomTexture && randomTexture.isScatter) {
                         newSymbol = createTempSymbol(randomSymbolIndex);
@@ -492,7 +570,6 @@ import {
                         newSymbol.width = SYMBOL_WIDTH;
                         newSymbol.height = SYMBOL_HEIGHT;
                     }
-
                     newSymbol.x = 0;
                     newSymbol.y = row * (SYMBOL_HEIGHT + SYMBOL_SPACING);
                     reelContainers[col].addChild(newSymbol);
@@ -505,10 +582,9 @@ import {
                     clearInterval(reelSpin);
 
                     for (let row = 0; row < ROWS; row++) {
-                        if (walkingWilds.length > 0 && walkingWilds[0].col === col) continue;
+                        reelContainers[col].removeChild(slots[col][row]);
                         const finalSymbolIndex = Math.floor(Math.random() * symbolTextures.length);
                         const finalTexture = symbolTextures[finalSymbolIndex];
-                        reelContainers[col].removeChild(slots[col][row]);
                         let finalSymbol;
                         if (finalTexture && finalTexture.isScatter) {
                             finalSymbol = createTempSymbol(finalSymbolIndex);
