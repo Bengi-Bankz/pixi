@@ -63,24 +63,80 @@ import {
     // Cat label textures
     let catLabels = []; // Array of 5 textures (Cat 1–5)
 
-    // Background
-    let backgroundSprite = null;
+    // Animated backgrounds: auto-detect all bg/*.png.json atlases
+    let bgSpriteSheets = [];
+    let bgFrameArrays = [];
+    let bgFrameIndices = [];
+    let animatedBgSprites = [];
+    let overlayBgSprite = null;
     try {
-        const backgroundTexture = await Assets.load('board_frame_001.png');
-        backgroundSprite = new Sprite(backgroundTexture);
-        backgroundSprite.width = SCREEN_WIDTH;
-        backgroundSprite.height = SCREEN_HEIGHT;
-        backgroundSprite.x = 0;
-        backgroundSprite.y = 0;
-        app.stage.addChild(backgroundSprite);
-        console.log('✅ Hurricane Chase background loaded successfully!');
+        // Dynamically find all bg/*.png.json files
+        const bgAtlasFiles = [];
+        const bgDir = 'bg';
+        // List of all possible backgrounds (manually listed for now, can be automated with a build step)
+        bgAtlasFiles.push('bg/bg-0.png.json');
+        bgAtlasFiles.push('bg/bg-1.png.json');
+        bgAtlasFiles.push('bg/bg-0@0.5x.png.json');
+        bgAtlasFiles.push('bg/bg-1@0.5x.png.json');
+        // If you add more, just add to this array or automate with a build script
+
+        for (let i = 0; i < bgAtlasFiles.length; i++) {
+            try {
+                const sheet = await Assets.load(bgAtlasFiles[i]);
+                const frameNames = Object.keys(sheet.textures)
+                    .filter(name => name.startsWith('frame_'))
+                    .sort((a, b) => {
+                        const na = parseInt(a.match(/(\d+)/)[0], 10);
+                        const nb = parseInt(b.match(/(\d+)/)[0], 10);
+                        return na - nb;
+                    });
+                const frames = frameNames.map(name => sheet.textures[name]);
+                if (frames.length === 0) continue;
+                const sprite = new Sprite(frames[0]);
+                sprite.width = SCREEN_WIDTH;
+                sprite.height = SCREEN_HEIGHT;
+                sprite.x = 0;
+                sprite.y = 0;
+                // Insert each background in order (0 = bottom, 1 = above, etc)
+                app.stage.addChildAt(sprite, i);
+                bgSpriteSheets.push(sheet);
+                bgFrameArrays.push(frames);
+                bgFrameIndices.push(0);
+                animatedBgSprites.push(sprite);
+                console.log(`✅ Animated background loaded: ${bgAtlasFiles[i]}`);
+            } catch (bgErr) {
+                console.log(`❌ Could not load background atlas: ${bgAtlasFiles[i]}`, bgErr);
+            }
+        }
+
+        // Overlay background (board_frame_001.png) above all animated backgrounds
+        const overlayTexture = await Assets.load('board_frame_001.png');
+        overlayBgSprite = new Sprite(overlayTexture);
+        overlayBgSprite.width = SCREEN_WIDTH;
+        overlayBgSprite.height = SCREEN_HEIGHT;
+        overlayBgSprite.x = 0;
+        overlayBgSprite.y = 0;
+        // Insert at index = number of animated backgrounds
+        app.stage.addChildAt(overlayBgSprite, animatedBgSprites.length);
+
+        // Animate all backgrounds in a loop
+        app.ticker.add(() => {
+            for (let i = 0; i < animatedBgSprites.length; i++) {
+                if (!bgFrameArrays[i] || !bgFrameArrays[i].length) continue;
+                bgFrameIndices[i] = (bgFrameIndices[i] + 0.1) % bgFrameArrays[i].length;
+                animatedBgSprites[i].texture = bgFrameArrays[i][Math.floor(bgFrameIndices[i])];
+            }
+        });
+        console.log('✅ All animated backgrounds loaded and running!');
+        console.log('✅ Overlay background loaded and layered above animated backgrounds!');
     } catch (error) {
-        console.log('❌ Background could not be loaded:', error);
+        console.log('❌ Animated backgrounds could not be loaded:', error);
+        // Fallback: solid color
         const fallbackBg = new Graphics();
         fallbackBg.fill(0x1a1a2e);
         fallbackBg.rect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
         fallbackBg.fill();
-        app.stage.addChild(fallbackBg);
+        app.stage.addChildAt(fallbackBg, 0);
     }
 
     // Slot container
@@ -408,11 +464,11 @@ import {
                 if (!slots[col][row] || !slots[col][row].parent) {
                     emptyCount++;
                     console.warn(`🔧 Fixing empty slot at column ${col + 1}, row ${row + 1}`);
-                    
+
                     // Create a replacement symbol using only valid symbols (not walking wild)
                     const randomSymbolIndex = Math.floor(Math.random() * symbolTextures.length);
                     let replacementSymbol = createTempSymbol(randomSymbolIndex);
-                    
+
                     // If createTempSymbol returned a texture instead of a sprite/container, wrap it
                     if (replacementSymbol && replacementSymbol.baseTexture && !replacementSymbol.addChild) {
                         const spriteWrapper = new Sprite(replacementSymbol);
@@ -420,7 +476,7 @@ import {
                         spriteWrapper.height = SYMBOL_HEIGHT;
                         replacementSymbol = spriteWrapper;
                     }
-                    
+
                     replacementSymbol.x = 0;
                     replacementSymbol.y = row * (SYMBOL_HEIGHT + SYMBOL_SPACING);
                     reelContainers[col].addChild(replacementSymbol);
@@ -446,7 +502,7 @@ import {
             // Use only regular symbols (not walking wild)
             const randomSymbolIndex = Math.floor(Math.random() * symbolTextures.length);
             let symbol = createTempSymbol(randomSymbolIndex);
-            
+
             // If createTempSymbol returned a texture instead of a sprite/container, wrap it
             if (symbol && symbol.baseTexture && !symbol.addChild) {
                 const spriteWrapper = new Sprite(symbol);
@@ -454,7 +510,7 @@ import {
                 spriteWrapper.height = SYMBOL_HEIGHT;
                 symbol = spriteWrapper;
             }
-            
+
             // Ensure we have a valid symbol
             if (!symbol) {
                 console.warn(`⚠️ Failed to create initial symbol for index ${randomSymbolIndex}, using fallback`);
@@ -466,7 +522,7 @@ import {
                     symbol = spriteWrapper;
                 }
             }
-            
+
             symbol.x = 0;
             symbol.y = row * (SYMBOL_HEIGHT + SYMBOL_SPACING);
             reelContainer.addChild(symbol);
@@ -547,7 +603,7 @@ import {
         console.log(`🏷️ Adding Cat ${catCategory} label to walking wild in column ${col + 1}`);
         console.log(`🏷️ catLabels.length = ${catLabels.length}, catCategory = ${catCategory}`);
         console.log(`🏷️ Available cat labels:`, catLabels);
-        
+
         if (catLabels.length >= catCategory && catLabels[catCategory - 1]) {
             console.log(`🏷️ Using texture:`, catLabels[catCategory - 1]);
             const labelSprite = new Sprite(catLabels[catCategory - 1]);
@@ -598,10 +654,10 @@ import {
     // Start spinning animation for destination column while wild slides
     function startDestinationColumnSpin(col) {
         console.log(`🎰 Starting destination column spin for column ${col + 1}`);
-        
+
         let spinCount = 0;
         const maxSpins = 8; // Shorter spin since wild is coming
-        
+
         const columnSpin = setInterval(() => {
             // Only spin if column doesn't have wild elements
             let hasWildElements = false;
@@ -611,7 +667,7 @@ import {
                     break;
                 }
             }
-            
+
             if (hasWildElements) {
                 clearInterval(columnSpin);
                 return;
@@ -622,10 +678,10 @@ import {
                 if (slots[col][row] && slots[col][row] !== currentWildSprite) {
                     reelContainers[col].removeChild(slots[col][row]);
                 }
-                
+
                 const randomSymbolIndex = Math.floor(Math.random() * symbolTextures.length);
                 let newSymbol = createTempSymbol(randomSymbolIndex);
-                
+
                 // If createTempSymbol returned a texture instead of a sprite/container, wrap it
                 if (newSymbol && newSymbol.baseTexture && !newSymbol.addChild) {
                     const spriteWrapper = new Sprite(newSymbol);
@@ -633,7 +689,7 @@ import {
                     spriteWrapper.height = SYMBOL_HEIGHT;
                     newSymbol = spriteWrapper;
                 }
-                
+
                 newSymbol.x = 0;
                 newSymbol.y = row * (SYMBOL_HEIGHT + SYMBOL_SPACING);
                 reelContainers[col].addChild(newSymbol);
@@ -651,10 +707,10 @@ import {
     // Start spinning the column that the wild just stepped off from
     function startColumnSpinAfterWildLeaves(col) {
         console.log(`🌪️ Starting spin for column ${col + 1} after wild stepped off`);
-        
+
         let spinCount = 0;
         const maxSpins = 12; // Medium spin duration
-        
+
         const columnSpin = setInterval(() => {
             // Remove existing symbols and add random spinning ones
             for (let row = 0; row < ROWS; row++) {
@@ -665,10 +721,10 @@ import {
                         slots[col][row] = null;
                     }
                 }
-                
+
                 const randomSymbolIndex = Math.floor(Math.random() * symbolTextures.length);
                 let newSymbol = createTempSymbol(randomSymbolIndex);
-                
+
                 // If createTempSymbol returned a texture instead of a sprite/container, wrap it
                 if (newSymbol && newSymbol.baseTexture && !newSymbol.addChild) {
                     const spriteWrapper = new Sprite(newSymbol);
@@ -676,7 +732,7 @@ import {
                     spriteWrapper.height = SYMBOL_HEIGHT;
                     newSymbol = spriteWrapper;
                 }
-                
+
                 newSymbol.x = 0;
                 newSymbol.y = row * (SYMBOL_HEIGHT + SYMBOL_SPACING);
                 reelContainers[col].addChild(newSymbol);
@@ -686,13 +742,13 @@ import {
             spinCount++;
             if (spinCount >= maxSpins) {
                 clearInterval(columnSpin);
-                
+
                 // Final symbols with possible special symbols
                 reelContainers[col].removeChildren();
                 for (let row = 0; row < ROWS; row++) {
                     const finalSymbolIndex = Math.floor(Math.random() * symbolTextures.length);
                     let finalSymbol = createTempSymbol(finalSymbolIndex);
-                    
+
                     // If createTempSymbol returned a texture instead of a sprite/container, wrap it
                     if (finalSymbol && finalSymbol.baseTexture && !finalSymbol.addChild) {
                         const spriteWrapper = new Sprite(finalSymbol);
@@ -700,27 +756,27 @@ import {
                         spriteWrapper.height = SYMBOL_HEIGHT;
                         finalSymbol = spriteWrapper;
                     }
-                    
+
                     // Check if it's a scatter symbol and start animation
                     if (finalSymbol.isScatter) {
                         setTimeout(() => {
                             startScatterAnimation(finalSymbol);
                         }, 500);
                     }
-                    
+
                     // Check if it's a storm tracker and start pulse
                     if (finalSymbol.isStormTracker) {
                         setTimeout(() => {
                             startStormTrackerPulse(finalSymbol, col, row);
                         }, 600);
                     }
-                    
+
                     finalSymbol.x = 0;
                     finalSymbol.y = row * (SYMBOL_HEIGHT + SYMBOL_SPACING);
                     reelContainers[col].addChild(finalSymbol);
                     slots[col][row] = finalSymbol;
                 }
-                
+
                 console.log(`✅ Column ${col + 1} finished spinning after wild left`);
             }
         }, 100); // Same speed as regular reels
@@ -730,7 +786,7 @@ import {
     function slideWildToNextCol() {
         if (walkingWilds.length === 0) return;
         const prevCol = walkingWilds[0].col;
-        
+
         // If wild is already at column 0, mark it for landfall after this spin
         if (prevCol === 0) {
             // Stay on column 0 for one more spin, then remove
@@ -783,7 +839,7 @@ import {
                 break;
             }
         }
-        
+
         if (!hasWildInDestination) {
             createTrapdoorEffect(nextCol);
         }
@@ -803,7 +859,7 @@ import {
 
         // Wait a moment for trapdoor effect if it was triggered
         const slideDelay = hasWildInDestination ? 0 : 300;
-        
+
         setTimeout(() => {
             // Remove from prevCol
             prevContainer.removeChild(bluePanel);
@@ -850,7 +906,7 @@ import {
                     }
                     walkingWilds[0].col = nextCol;
                     animatingWild = false;
-                    
+
                     // Start spinning the column the wild just left
                     startColumnSpinAfterWildLeaves(prevCol);
                 }
@@ -861,17 +917,17 @@ import {
     // Create trapdoor effect for destination column
     function createTrapdoorEffect(col) {
         console.log(`🕳️ Creating trapdoor effect for column ${col + 1}`);
-        
+
         let completed = 0;
         let totalSymbols = 0;
-        
+
         for (let row = 0; row < ROWS; row++) {
             const symbol = slots[col][row];
             if (!symbol || symbol === currentWildSprite) {
                 // Skip null symbols and the current wild sprite
                 continue;
             }
-            
+
             totalSymbols++;
 
             // Compute global position before moving to stage
@@ -903,8 +959,8 @@ import {
                         const childrenToRemove = [];
                         for (let i = 0; i < reelContainers[col].children.length; i++) {
                             const child = reelContainers[col].children[i];
-                            if (child !== currentWildSprite && 
-                                child.name !== 'wild-panel-bg' && 
+                            if (child !== currentWildSprite &&
+                                child.name !== 'wild-panel-bg' &&
                                 child.name !== 'cat-label') {
                                 childrenToRemove.push(child);
                             }
@@ -915,7 +971,7 @@ import {
                 }
             });
         }
-        
+
         // If no symbols to drop, consider it completed immediately
         if (totalSymbols === 0) {
             console.log(`✅ Trapdoor effect completed immediately for column ${col + 1} (no symbols to drop)`);
@@ -1037,10 +1093,10 @@ import {
                         if (reelAnimations.filter(stopped => stopped).length === COLS) {
                             isSpinning = false;
                             spinButtonText.text = 'SPIN';
-                            
+
                             // Validate slots after spinning
                             validateAndFixSlots();
-                            
+
                             const winAmount = Math.floor(Math.random() * currentBet * 3);
                             if (winAmount > 0) {
                                 balance += winAmount;
@@ -1066,7 +1122,7 @@ import {
                     }
                     const randomSymbolIndex = Math.floor(Math.random() * symbolTextures.length);
                     let newSymbol = createTempSymbol(randomSymbolIndex);
-                    
+
                     // If createTempSymbol returned a texture instead of a sprite/container, wrap it
                     if (newSymbol && newSymbol.baseTexture && !newSymbol.addChild) {
                         const spriteWrapper = new Sprite(newSymbol);
@@ -1074,7 +1130,7 @@ import {
                         spriteWrapper.height = SYMBOL_HEIGHT;
                         newSymbol = spriteWrapper;
                     }
-                    
+
                     // Ensure we have a valid symbol
                     if (!newSymbol) {
                         console.warn(`⚠️ Failed to create symbol for index ${randomSymbolIndex}, using fallback`);
@@ -1086,7 +1142,7 @@ import {
                             newSymbol = spriteWrapper;
                         }
                     }
-                    
+
                     newSymbol.x = 0;
                     newSymbol.y = row * (SYMBOL_HEIGHT + SYMBOL_SPACING);
                     reelContainers[col].addChild(newSymbol);
@@ -1104,7 +1160,7 @@ import {
                         }
                         const finalSymbolIndex = Math.floor(Math.random() * symbolTextures.length);
                         let finalSymbol = createTempSymbol(finalSymbolIndex);
-                        
+
                         // If createTempSymbol returned a texture instead of a sprite/container, wrap it
                         if (finalSymbol && finalSymbol.baseTexture && !finalSymbol.addChild) {
                             const spriteWrapper = new Sprite(finalSymbol);
@@ -1112,7 +1168,7 @@ import {
                             spriteWrapper.height = SYMBOL_HEIGHT;
                             finalSymbol = spriteWrapper;
                         }
-                        
+
                         // Ensure we have a valid symbol
                         if (!finalSymbol) {
                             console.warn(`⚠️ Failed to create final symbol for index ${finalSymbolIndex}, using fallback`);
@@ -1124,21 +1180,21 @@ import {
                                 finalSymbol = spriteWrapper;
                             }
                         }
-                        
+
                         // Check if it's a scatter symbol and start animation
                         if (finalSymbol.isScatter) {
                             setTimeout(() => {
                                 startScatterAnimation(finalSymbol);
                             }, 500);
                         }
-                        
+
                         // Check if it's a storm tracker and start pulse
                         if (finalSymbol.isStormTracker) {
                             setTimeout(() => {
                                 startStormTrackerPulse(finalSymbol, col, row);
                             }, 600);
                         }
-                        
+
                         finalSymbol.x = 0;
                         finalSymbol.y = row * (SYMBOL_HEIGHT + SYMBOL_SPACING);
                         reelContainers[col].addChild(finalSymbol);
@@ -1328,4 +1384,82 @@ import {
 🌩️ Grid with wider symbols perfectly fits the Hurricane Chase frame!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     `);
+
+    // Assume bgFrames is your array of textures for the background animation
+    // and bgSprite is the PIXI.Sprite displaying the background
+
+    let bgCurrentFrame = 6; // Frame 7 (zero-based)
+    let bgAnimating = false;
+    const bgFrameDuration = 100; // ms per frame during animation
+    const bgHoldDuration = 120000; // 2 minutes
+
+    function showBgFrame7() {
+        bgSprite.texture = bgFrames[bgCurrentFrame];
+    }
+
+    function playBgAnimationOnce() {
+        bgAnimating = true;
+        let frame = 0;
+        const anim = setInterval(() => {
+            bgSprite.texture = bgFrames[frame];
+            frame++;
+            if (frame >= bgFrames.length) {
+                clearInterval(anim);
+                bgAnimating = false;
+                showBgFrame7();
+                scheduleBgAnimation();
+            }
+        }, bgFrameDuration);
+    }
+
+    function scheduleBgAnimation() {
+        setTimeout(() => {
+            if (!bgAnimating) playBgAnimationOnce();
+        }, bgHoldDuration);
+    }
+
+    // Initial setup
+    showBgFrame7();
+    scheduleBgAnimation();
+
+    // Show frame 7 for all animated backgrounds
+    function showAllBgFrame7() {
+        for (let i = 0; i < animatedBgSprites.length; i++) {
+            if (bgFrameArrays[i] && bgFrameArrays[i][HOLD_FRAME_INDEX]) {
+                animatedBgSprites[i].texture = bgFrameArrays[i][HOLD_FRAME_INDEX];
+            }
+        }
+    }
+
+    // Play full animation for all backgrounds once, then return to frame 7
+    function playAllBgAnimationsOnce() {
+        bgAnimating = true;
+        let frame = 0;
+        const maxFrames = Math.max(...bgFrameArrays.map(arr => arr.length));
+        const anim = setInterval(() => {
+            for (let i = 0; i < animatedBgSprites.length; i++) {
+                if (bgFrameArrays[i] && bgFrameArrays[i][frame]) {
+                    animatedBgSprites[i].texture = bgFrameArrays[i][frame];
+                }
+            }
+            frame++;
+            if (frame >= maxFrames) {
+                clearInterval(anim);
+                bgAnimating = false;
+                showAllBgFrame7();
+                scheduleAllBgAnimation();
+            }
+        }, FRAME_DURATION);
+    }
+
+    // Schedule the animation to play every X seconds
+    function scheduleAllBgAnimation() {
+        setTimeout(() => {
+            if (!bgAnimating) playAllBgAnimationsOnce();
+        }, ANIMATION_INTERVAL);
+    }
+
+    // Initial setup
+    showAllBgFrame7();
+    scheduleAllBgAnimation();
 })();
