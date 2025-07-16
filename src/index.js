@@ -60,10 +60,13 @@ import {
     let cat5WildTexture = null;
     let currentWildSprite = null; // Hold the wild sprite to move it
 
+    // Cat label textures
+    let catLabels = []; // Array of 5 textures (Cat 1–5)
+
     // Background
     let backgroundSprite = null;
     try {
-        const backgroundTexture = await Assets.load('/board_frame_001.png');
+        const backgroundTexture = await Assets.load('board_frame_001.png');
         backgroundSprite = new Sprite(backgroundTexture);
         backgroundSprite.width = SCREEN_WIDTH;
         backgroundSprite.height = SCREEN_HEIGHT;
@@ -165,8 +168,18 @@ import {
     let houseScatterFrames = [];
     let hurricaneScatterFrames = [];
 
+    // Load Cat1-5 label textures
+    for (let i = 1; i <= 5; i++) {
+        try {
+            const labelTexture = await Assets.load(`labels/${i}label.png`);
+            catLabels.push(labelTexture);
+        } catch (error) {
+            console.error(`❌ Could not load label: labels/${i}label.png`, error);
+        }
+    }
+
     try {
-        scatterSpriteSheet = await Assets.load('/scatter-sprite-animation-seq/scatter.png.json');
+        scatterSpriteSheet = await Assets.load('scatter-sprite-animation-seq/scatter.png.json');
         for (let i = 1; i <= 6; i++) {
             const frameName = `housescatter_0${i}.png`;
             if (scatterSpriteSheet.textures[frameName]) {
@@ -187,7 +200,7 @@ import {
     }
 
     try {
-        symbolSpriteSheet = await Assets.load('/symbol-sprites/symbols.png.json');
+        symbolSpriteSheet = await Assets.load('symbol-sprites/symbols.png.json');
         console.log('✅ Symbol sprite sheet loaded successfully!');
     } catch (error) {
         console.log('❌ Could not load symbol sprite sheet:', error);
@@ -195,11 +208,20 @@ import {
 
     // Load CAT5 wild sprite
     try {
-        const catWildSheet = await Assets.load('/cat1-5.png.json');
+        const catWildSheet = await Assets.load('cat1-5.png.json');
         cat5WildTexture = catWildSheet.textures["5sprite-removebg-preview.png"];
         console.log('✅ Cat5 Wild loaded!');
     } catch (error) {
         console.log('❌ Could not load Cat5 Wild:', error);
+    }
+
+    // Load Storm Chase Cat (storm tracker symbol)
+    let stormChaseCatTexture = null;
+    try {
+        stormChaseCatTexture = await Assets.load('stormchasescat.png');
+        console.log('✅ Storm Chase Cat loaded!');
+    } catch (error) {
+        console.log('❌ Could not load Storm Chase Cat:', error);
     }
 
     function createTempSymbol(symbolType) {
@@ -227,6 +249,17 @@ import {
             animatedSprite.sprite = sprite;
             return animatedSprite;
         }
+        // Storm Chase Cat (Storm Tracker) - Index 2
+        if (symbolType === 2 && stormChaseCatTexture) {
+            const stormContainer = new Container();
+            const sprite = new Sprite(stormChaseCatTexture);
+            sprite.width = SYMBOL_WIDTH;
+            sprite.height = SYMBOL_HEIGHT;
+            stormContainer.addChild(sprite);
+            stormContainer.isStormTracker = true;
+            stormContainer.sprite = sprite;
+            return stormContainer;
+        }
         if (symbolType === WALKING_WILD_INDEX && cat5WildTexture) {
             return cat5WildTexture;
         }
@@ -246,7 +279,7 @@ import {
                 'jack_frame.png',
                 '10_frame.png'
             ];
-            if (symbolType >= 2 && symbolType < symbolNames.length && symbolNames[symbolType]) {
+            if (symbolType >= 3 && symbolType < symbolNames.length && symbolNames[symbolType]) {
                 const symbolTexture = symbolSpriteSheet.textures[symbolNames[symbolType]];
                 if (symbolTexture) {
                     return symbolTexture;
@@ -282,11 +315,12 @@ import {
         return app.renderer.generateTexture(symbolContainer);
     }
 
-    // Symbol textures: includes Cat5 wild at index 13
+    // Symbol textures: exclude Cat5 wild from regular symbols
     const symbolTextures = [];
-    for (let i = 0; i <= WALKING_WILD_INDEX; i++) {
+    for (let i = 0; i < WALKING_WILD_INDEX; i++) { // Stop before walking wild index
         symbolTextures.push(createTempSymbol(i));
     }
+    // Note: WALKING_WILD_INDEX (13) is excluded from regular symbol pool
 
     function startScatterAnimation(symbol) {
         if (!symbol.isScatter || !symbol.frames || symbol.frames.length === 0) return;
@@ -307,6 +341,99 @@ import {
         }, 150);
     }
 
+    // Storm tracker pulse animation
+    function startStormTrackerPulse(symbol, col, row) {
+        if (!symbol.isStormTracker) return;
+
+        console.log(`🌩️ Storm tracker detected at column ${col + 1}, row ${row + 1}!`);
+
+        let pulseCount = 0;
+        const maxPulses = 2; // Reduced from 3 to 2
+        let growing = true;
+        const originalScale = 1.0;
+        const maxScale = 1.05; // Reduced from 1.3 to 1.1 (more subtle)
+        let currentScale = originalScale;
+
+        const pulseInterval = setInterval(() => {
+            if (growing) {
+                currentScale += 0.04; // Reduced from 0.05 to 0.02 (slower growth)
+                if (currentScale >= maxScale) {
+                    growing = false;
+                }
+            } else {
+                currentScale -= 0.02; // Reduced from 0.05 to 0.02 (slower shrink)
+                if (currentScale <= originalScale) {
+                    growing = true;
+                    pulseCount++;
+                }
+            }
+
+            // Scale the entire container, not just the sprite
+            symbol.scale.set(currentScale);
+
+            if (pulseCount >= maxPulses) {
+                clearInterval(pulseInterval);
+                symbol.scale.set(originalScale);
+                console.log('⚡ Storm tracker pulse completed! Triggering storm...');
+
+                // Trigger storm spawn after pulse
+                setTimeout(() => {
+                    if (!animatingWild && walkingWilds.length === 0) {
+                        triggerStormFromTracker();
+                    }
+                }, 500);
+            }
+        }, 120); // Increased from 100ms to 120ms (slower overall animation)
+    }
+
+    // Trigger storm spawn from storm tracker
+    function triggerStormFromTracker() {
+        if (!cat5WildTexture || catLabels.length !== 5) {
+            console.log('❌ Storm assets not loaded!');
+            return;
+        }
+
+        const spawnCol = COLS - 1;
+        const catCategory = Math.ceil(Math.random() * 5);
+        walkingWilds = [{ col: spawnCol, stepsRemaining: spawnCol, cat: catCategory }];
+        console.log(`🌪️ Storm tracker triggered Cat ${catCategory} hurricane in column ${spawnCol + 1}!`);
+        startWalkingWildDrop(spawnCol);
+    }
+
+    // Validate and fix empty slots
+    function validateAndFixSlots() {
+        let emptyCount = 0;
+        for (let col = 0; col < COLS; col++) {
+            for (let row = 0; row < ROWS; row++) {
+                if (!slots[col][row] || !slots[col][row].parent) {
+                    emptyCount++;
+                    console.warn(`🔧 Fixing empty slot at column ${col + 1}, row ${row + 1}`);
+                    
+                    // Create a replacement symbol using only valid symbols (not walking wild)
+                    const randomSymbolIndex = Math.floor(Math.random() * symbolTextures.length);
+                    let replacementSymbol = createTempSymbol(randomSymbolIndex);
+                    
+                    // If createTempSymbol returned a texture instead of a sprite/container, wrap it
+                    if (replacementSymbol && replacementSymbol.baseTexture && !replacementSymbol.addChild) {
+                        const spriteWrapper = new Sprite(replacementSymbol);
+                        spriteWrapper.width = SYMBOL_WIDTH;
+                        spriteWrapper.height = SYMBOL_HEIGHT;
+                        replacementSymbol = spriteWrapper;
+                    }
+                    
+                    replacementSymbol.x = 0;
+                    replacementSymbol.y = row * (SYMBOL_HEIGHT + SYMBOL_SPACING);
+                    reelContainers[col].addChild(replacementSymbol);
+                    slots[col][row] = replacementSymbol;
+                }
+            }
+        }
+        if (emptyCount > 0) {
+            console.log(`🔧 Fixed ${emptyCount} empty slots`);
+        }
+        return emptyCount;
+    }
+
     for (let col = 0; col < COLS; col++) {
         const reelContainer = new Container();
         reelContainer.x = col * (SYMBOL_WIDTH + SYMBOL_SPACING);
@@ -316,21 +443,40 @@ import {
 
         slots[col] = [];
         for (let row = 0; row < ROWS; row++) {
-            const symbolTexture = symbolTextures[Math.floor(Math.random() * symbolTextures.length)];
-            let symbol;
-            if (symbolTexture && symbolTexture.isScatter) {
-                symbol = symbolTexture;
-            } else {
-                symbol = new Sprite(symbolTexture);
-                symbol.width = SYMBOL_WIDTH;
-                symbol.height = SYMBOL_HEIGHT;
+            // Use only regular symbols (not walking wild)
+            const randomSymbolIndex = Math.floor(Math.random() * symbolTextures.length);
+            let symbol = createTempSymbol(randomSymbolIndex);
+            
+            // If createTempSymbol returned a texture instead of a sprite/container, wrap it
+            if (symbol && symbol.baseTexture && !symbol.addChild) {
+                const spriteWrapper = new Sprite(symbol);
+                spriteWrapper.width = SYMBOL_WIDTH;
+                spriteWrapper.height = SYMBOL_HEIGHT;
+                symbol = spriteWrapper;
             }
+            
+            // Ensure we have a valid symbol
+            if (!symbol) {
+                console.warn(`⚠️ Failed to create initial symbol for index ${randomSymbolIndex}, using fallback`);
+                symbol = createTempSymbol(8); // Use ACE as fallback
+                if (symbol && symbol.baseTexture && !symbol.addChild) {
+                    const spriteWrapper = new Sprite(symbol);
+                    spriteWrapper.width = SYMBOL_WIDTH;
+                    spriteWrapper.height = SYMBOL_HEIGHT;
+                    symbol = spriteWrapper;
+                }
+            }
+            
             symbol.x = 0;
             symbol.y = row * (SYMBOL_HEIGHT + SYMBOL_SPACING);
             reelContainer.addChild(symbol);
             slots[col][row] = symbol;
         }
     }
+
+    // Validate initial grid
+    console.log('🔍 Validating initial grid...');
+    validateAndFixSlots();
 
     // ------- WALKING WILD ANIMATION SYSTEM -------
 
@@ -384,7 +530,7 @@ import {
         reelContainers[col].addChild(bluePanel);
     }
 
-    // Drop one Cat5 wild, centered in the blue panel
+    // Drop one CatX wild, centered in the blue panel, with category label
     function dropExpandWild(col) {
         reelContainers[col].removeChildren();
 
@@ -396,7 +542,29 @@ import {
         bluePanel.name = 'wild-panel-bg';
         reelContainers[col].addChild(bluePanel);
 
-        // Only one Cat5 wild, centered vertically in the panel
+        // Add the category label sprite at the top of the reel
+        const catCategory = walkingWilds[0].cat; // 1-5
+        console.log(`🏷️ Adding Cat ${catCategory} label to walking wild in column ${col + 1}`);
+        console.log(`🏷️ catLabels.length = ${catLabels.length}, catCategory = ${catCategory}`);
+        console.log(`🏷️ Available cat labels:`, catLabels);
+        
+        if (catLabels.length >= catCategory && catLabels[catCategory - 1]) {
+            console.log(`🏷️ Using texture:`, catLabels[catCategory - 1]);
+            const labelSprite = new Sprite(catLabels[catCategory - 1]);
+            labelSprite.width = SYMBOL_WIDTH - 4; // Slightly smaller than column for padding
+            labelSprite.height = 35; // Slightly shorter for better fit
+            labelSprite.x = 2; // Small padding from left edge
+            labelSprite.y = -35; // Position above the blue panel but within mask bounds
+            labelSprite.name = "cat-label";
+            reelContainers[col].addChild(labelSprite);
+            console.log(`✅ Cat ${catCategory} label added successfully! Sprite:`, labelSprite);
+            console.log(`✅ Label position: x=${labelSprite.x}, y=${labelSprite.y}, width=${labelSprite.width}, height=${labelSprite.height}`);
+        } else {
+            console.log(`❌ Cat label ${catCategory} not available (only ${catLabels.length} labels loaded)`);
+            console.log(`❌ Texture at index ${catCategory - 1}:`, catLabels[catCategory - 1]);
+        }
+
+        // Only one CatX wild, centered vertically in the panel
         const wild = new Sprite(cat5WildTexture);
         wild.width = SYMBOL_WIDTH;
         wild.height = SYMBOL_HEIGHT;
@@ -427,70 +595,398 @@ import {
         });
     }
 
-    // Slide the wild and blue panel left one column, no trapdoor!
+    // Start spinning animation for destination column while wild slides
+    function startDestinationColumnSpin(col) {
+        console.log(`🎰 Starting destination column spin for column ${col + 1}`);
+        
+        let spinCount = 0;
+        const maxSpins = 8; // Shorter spin since wild is coming
+        
+        const columnSpin = setInterval(() => {
+            // Only spin if column doesn't have wild elements
+            let hasWildElements = false;
+            for (let row = 0; row < ROWS; row++) {
+                if (slots[col][row] === currentWildSprite) {
+                    hasWildElements = true;
+                    break;
+                }
+            }
+            
+            if (hasWildElements) {
+                clearInterval(columnSpin);
+                return;
+            }
+
+            // Remove existing symbols and add random spinning ones
+            for (let row = 0; row < ROWS; row++) {
+                if (slots[col][row] && slots[col][row] !== currentWildSprite) {
+                    reelContainers[col].removeChild(slots[col][row]);
+                }
+                
+                const randomSymbolIndex = Math.floor(Math.random() * symbolTextures.length);
+                let newSymbol = createTempSymbol(randomSymbolIndex);
+                
+                // If createTempSymbol returned a texture instead of a sprite/container, wrap it
+                if (newSymbol && newSymbol.baseTexture && !newSymbol.addChild) {
+                    const spriteWrapper = new Sprite(newSymbol);
+                    spriteWrapper.width = SYMBOL_WIDTH;
+                    spriteWrapper.height = SYMBOL_HEIGHT;
+                    newSymbol = spriteWrapper;
+                }
+                
+                newSymbol.x = 0;
+                newSymbol.y = row * (SYMBOL_HEIGHT + SYMBOL_SPACING);
+                reelContainers[col].addChild(newSymbol);
+                slots[col][row] = newSymbol;
+            }
+
+            spinCount++;
+            if (spinCount >= maxSpins) {
+                clearInterval(columnSpin);
+                console.log(`✅ Destination column ${col + 1} spin completed`);
+            }
+        }, 120); // Slightly slower than regular reels for visual effect
+    }
+
+    // Start spinning the column that the wild just stepped off from
+    function startColumnSpinAfterWildLeaves(col) {
+        console.log(`🌪️ Starting spin for column ${col + 1} after wild stepped off`);
+        
+        let spinCount = 0;
+        const maxSpins = 12; // Medium spin duration
+        
+        const columnSpin = setInterval(() => {
+            // Remove existing symbols and add random spinning ones
+            for (let row = 0; row < ROWS; row++) {
+                // Clear the slot first
+                if (slots[col][row]) {
+                    // Don't remove if it's somehow still the wild (safety check)
+                    if (slots[col][row] !== currentWildSprite) {
+                        slots[col][row] = null;
+                    }
+                }
+                
+                const randomSymbolIndex = Math.floor(Math.random() * symbolTextures.length);
+                let newSymbol = createTempSymbol(randomSymbolIndex);
+                
+                // If createTempSymbol returned a texture instead of a sprite/container, wrap it
+                if (newSymbol && newSymbol.baseTexture && !newSymbol.addChild) {
+                    const spriteWrapper = new Sprite(newSymbol);
+                    spriteWrapper.width = SYMBOL_WIDTH;
+                    spriteWrapper.height = SYMBOL_HEIGHT;
+                    newSymbol = spriteWrapper;
+                }
+                
+                newSymbol.x = 0;
+                newSymbol.y = row * (SYMBOL_HEIGHT + SYMBOL_SPACING);
+                reelContainers[col].addChild(newSymbol);
+                slots[col][row] = newSymbol;
+            }
+
+            spinCount++;
+            if (spinCount >= maxSpins) {
+                clearInterval(columnSpin);
+                
+                // Final symbols with possible special symbols
+                reelContainers[col].removeChildren();
+                for (let row = 0; row < ROWS; row++) {
+                    const finalSymbolIndex = Math.floor(Math.random() * symbolTextures.length);
+                    let finalSymbol = createTempSymbol(finalSymbolIndex);
+                    
+                    // If createTempSymbol returned a texture instead of a sprite/container, wrap it
+                    if (finalSymbol && finalSymbol.baseTexture && !finalSymbol.addChild) {
+                        const spriteWrapper = new Sprite(finalSymbol);
+                        spriteWrapper.width = SYMBOL_WIDTH;
+                        spriteWrapper.height = SYMBOL_HEIGHT;
+                        finalSymbol = spriteWrapper;
+                    }
+                    
+                    // Check if it's a scatter symbol and start animation
+                    if (finalSymbol.isScatter) {
+                        setTimeout(() => {
+                            startScatterAnimation(finalSymbol);
+                        }, 500);
+                    }
+                    
+                    // Check if it's a storm tracker and start pulse
+                    if (finalSymbol.isStormTracker) {
+                        setTimeout(() => {
+                            startStormTrackerPulse(finalSymbol, col, row);
+                        }, 600);
+                    }
+                    
+                    finalSymbol.x = 0;
+                    finalSymbol.y = row * (SYMBOL_HEIGHT + SYMBOL_SPACING);
+                    reelContainers[col].addChild(finalSymbol);
+                    slots[col][row] = finalSymbol;
+                }
+                
+                console.log(`✅ Column ${col + 1} finished spinning after wild left`);
+            }
+        }, 100); // Same speed as regular reels
+    }
+
+    // Slide the wild, panel, and label left one column, no trapdoor!
     function slideWildToNextCol() {
         if (walkingWilds.length === 0) return;
         const prevCol = walkingWilds[0].col;
+        
+        // If wild is already at column 0, mark it for landfall after this spin
         if (prevCol === 0) {
-            // Remove wild state if at leftmost
-            walkingWilds = [];
-            return;
+            // Stay on column 0 for one more spin, then remove
+            if (walkingWilds[0].landfallNext) {
+                // Remove wild state after staying for one spin
+                const container = reelContainers[prevCol];
+                container.removeChildren();
+                for (let row = 0; row < ROWS; row++) {
+                    slots[prevCol][row] = null;
+                }
+                console.log(`🌪️ Cat ${walkingWilds[0].cat} hurricane made landfall!`);
+                walkingWilds = [];
+                currentWildSprite = null;
+                // Immediately fill with static symbols (no respawn spin)
+                setTimeout(() => {
+                    for (let row = 0; row < ROWS; row++) {
+                        const finalSymbolIndex = Math.floor(Math.random() * symbolTextures.length);
+                        let finalSymbol = createTempSymbol(finalSymbolIndex);
+                        if (finalSymbol && finalSymbol.baseTexture && !finalSymbol.addChild) {
+                            const spriteWrapper = new Sprite(finalSymbol);
+                            spriteWrapper.width = SYMBOL_WIDTH;
+                            spriteWrapper.height = SYMBOL_HEIGHT;
+                            finalSymbol = spriteWrapper;
+                        }
+                        finalSymbol.x = 0;
+                        finalSymbol.y = row * (SYMBOL_HEIGHT + SYMBOL_SPACING);
+                        reelContainers[prevCol].addChild(finalSymbol);
+                        slots[prevCol][row] = finalSymbol;
+                    }
+                    console.log(`✅ Column ${prevCol + 1} refilled after wild left (no respin)`);
+                }, 400);
+                return;
+            } else {
+                // Mark for landfall next time but stay for this spin
+                walkingWilds[0].landfallNext = true;
+                return;
+            }
         }
 
         const nextCol = prevCol - 1;
         const prevContainer = reelContainers[prevCol];
         const nextContainer = reelContainers[nextCol];
 
-        // Find the blue panel and wild in prevCol
+        // Only create trapdoor effect if destination column has regular symbols (not wild)
+        // Check if any slot in the destination column contains the current wild sprite
+        let hasWildInDestination = false;
+        for (let row = 0; row < ROWS; row++) {
+            if (slots[nextCol][row] === currentWildSprite) {
+                hasWildInDestination = true;
+                break;
+            }
+        }
+        
+        if (!hasWildInDestination) {
+            createTrapdoorEffect(nextCol);
+        }
+
+        // Start spinning the destination column while wild slides
+        startDestinationColumnSpin(nextCol);
+
+        // Find the blue panel, wild, and label in prevCol
         const bluePanel = prevContainer.getChildByName('wild-panel-bg');
+        const labelSprite = prevContainer.getChildByName('cat-label');
         const wild = currentWildSprite;
 
-        if (!bluePanel || !wild) {
+        if (!bluePanel || !wild || !labelSprite) {
             animatingWild = false;
             return;
         }
 
-        // Remove from prevCol
-        prevContainer.removeChild(bluePanel);
-        prevContainer.removeChild(wild);
+        // Wait a moment for trapdoor effect if it was triggered
+        const slideDelay = hasWildInDestination ? 0 : 300;
+        
+        setTimeout(() => {
+            // Remove from prevCol
+            prevContainer.removeChild(bluePanel);
+            prevContainer.removeChild(wild);
+            prevContainer.removeChild(labelSprite);
 
-        // Set initial positions (fixed at start)
-        bluePanel.x = 0; bluePanel.y = 0;
-        wild.x = 0; wild.y = (GRID_HEIGHT - SYMBOL_HEIGHT) / 2;
+            // Set initial positions (fixed at start)
+            bluePanel.x = 0; bluePanel.y = 0;
+            wild.x = 0; wild.y = (GRID_HEIGHT - SYMBOL_HEIGHT) / 2;
+            labelSprite.x = 2; labelSprite.y = -35; // Match the positioning from dropExpandWild
 
-        // Add to nextCol, but start at prevCol's X for animation
-        nextContainer.addChild(bluePanel);
-        nextContainer.addChild(wild);
+            // Add to nextCol, but start at prevCol's X for animation
+            nextContainer.addChild(bluePanel);
+            nextContainer.addChild(labelSprite);
+            nextContainer.addChild(wild);
 
-        // Animate X from prevCol to nextCol in slotContainer space
-        const startX = reelContainers[prevCol].x;
-        const endX = reelContainers[nextCol].x;
-        let t = 0;
-        const duration = 24;
-        animatingWild = true;
+            // Animate X from prevCol to nextCol in slotContainer space
+            const startX = reelContainers[prevCol].x;
+            const endX = reelContainers[nextCol].x;
+            let t = 0;
+            const duration = 24;
+            animatingWild = true;
 
-        // We'll animate by moving the wild/panel in nextCol from startX to endX, then snap to x=0
-        bluePanel.x = startX - endX;
-        wild.x = startX - endX;
+            // We'll animate by moving the wild/panel/label in nextCol from startX to endX, then snap to x=0
+            bluePanel.x = startX - endX;
+            wild.x = startX - endX;
+            labelSprite.x = startX - endX + 2; // Keep label padding
 
-        app.ticker.add(function slideTicker() {
-            t++;
-            const interp = (startX - endX) * (1 - t / duration);
-            bluePanel.x = interp;
-            wild.x = interp;
-            if (t >= duration) {
-                bluePanel.x = 0;
-                wild.x = 0;
-                app.ticker.remove(slideTicker);
-                // Set slots in new col to wild, clear old
-                for (let row = 0; row < ROWS; row++) {
-                    slots[nextCol][row] = wild;
-                    slots[prevCol][row] = null;
+            app.ticker.add(function slideTicker() {
+                t++;
+                const interp = (startX - endX) * (1 - t / duration);
+                bluePanel.x = interp;
+                wild.x = interp;
+                labelSprite.x = interp + 2; // Keep label padding
+                if (t >= duration) {
+                    bluePanel.x = 0;
+                    wild.x = 0;
+                    labelSprite.x = 2;
+                    app.ticker.remove(slideTicker);
+                    // Set slots in new col to wild, clear old
+                    for (let row = 0; row < ROWS; row++) {
+                        slots[nextCol][row] = wild;
+                        slots[prevCol][row] = null;
+                    }
+                    walkingWilds[0].col = nextCol;
+                    animatingWild = false;
+                    
+                    // Start spinning the column the wild just left
+                    startColumnSpinAfterWildLeaves(prevCol);
                 }
-                walkingWilds[0].col = nextCol;
-                animatingWild = false;
+            });
+        }, slideDelay);
+    }
+
+    // Create trapdoor effect for destination column
+    function createTrapdoorEffect(col) {
+        console.log(`🕳️ Creating trapdoor effect for column ${col + 1}`);
+        
+        let completed = 0;
+        let totalSymbols = 0;
+        
+        for (let row = 0; row < ROWS; row++) {
+            const symbol = slots[col][row];
+            if (!symbol || symbol === currentWildSprite) {
+                // Skip null symbols and the current wild sprite
+                continue;
             }
-        });
+            
+            totalSymbols++;
+
+            // Compute global position before moving to stage
+            const globalX = slotContainer.x + reelContainers[col].x + symbol.x;
+            const startY = slotContainer.y + reelContainers[col].y + symbol.y;
+            symbol.x = globalX;
+            symbol.y = startY;
+            app.stage.addChild(symbol);
+
+            const targetY = SCREEN_HEIGHT + SYMBOL_HEIGHT;
+            let t = 0;
+            const duration = 40;
+
+            app.ticker.add(function trapdoorTicker() {
+                t++;
+                symbol.y = startY + ((targetY - startY) * t / duration);
+                if (t >= duration) {
+                    app.ticker.remove(trapdoorTicker);
+                    app.stage.removeChild(symbol);
+                    completed++;
+                    if (completed === totalSymbols) {
+                        // Clear only the non-wild symbols from the column
+                        for (let row = 0; row < ROWS; row++) {
+                            if (slots[col][row] && slots[col][row] !== currentWildSprite) {
+                                slots[col][row] = null;
+                            }
+                        }
+                        // Remove children except wild elements
+                        const childrenToRemove = [];
+                        for (let i = 0; i < reelContainers[col].children.length; i++) {
+                            const child = reelContainers[col].children[i];
+                            if (child !== currentWildSprite && 
+                                child.name !== 'wild-panel-bg' && 
+                                child.name !== 'cat-label') {
+                                childrenToRemove.push(child);
+                            }
+                        }
+                        childrenToRemove.forEach(child => reelContainers[col].removeChild(child));
+                        console.log(`✅ Trapdoor effect completed for column ${col + 1}`);
+                    }
+                }
+            });
+        }
+        
+        // If no symbols to drop, consider it completed immediately
+        if (totalSymbols === 0) {
+            console.log(`✅ Trapdoor effect completed immediately for column ${col + 1} (no symbols to drop)`);
+        }
+    }
+
+    // Respawn symbols after landfall with spinning animation
+    function respawnSymbolsAfterLandfall(col) {
+        console.log(`🎰 Respawning symbols in column ${col + 1} after landfall...`);
+
+        let spinCount = 0;
+        const maxSpins = 15; // Quick respawn spin
+
+        const respawnSpin = setInterval(() => {
+            // Remove existing symbols (should be empty but just in case)
+            reelContainers[col].removeChildren();
+
+            // Add random symbols during spin
+            for (let row = 0; row < ROWS; row++) {
+                const randomSymbolIndex = Math.floor(Math.random() * symbolTextures.length);
+                let newSymbol = createTempSymbol(randomSymbolIndex);
+
+                // If createTempSymbol returned a texture instead of a sprite/container, wrap it
+                if (newSymbol && newSymbol.baseTexture && !newSymbol.addChild) {
+                    const spriteWrapper = new Sprite(newSymbol);
+                    spriteWrapper.width = SYMBOL_WIDTH;
+                    spriteWrapper.height = SYMBOL_HEIGHT;
+                    newSymbol = spriteWrapper;
+                }
+
+                newSymbol.x = 0;
+                newSymbol.y = row * (SYMBOL_HEIGHT + SYMBOL_SPACING);
+                reelContainers[col].addChild(newSymbol);
+                slots[col][row] = newSymbol;
+            }
+
+            spinCount++;
+
+            if (spinCount >= maxSpins) {
+                clearInterval(respawnSpin);
+
+                // Final symbols
+                reelContainers[col].removeChildren();
+                for (let row = 0; row < ROWS; row++) {
+                    const finalSymbolIndex = Math.floor(Math.random() * symbolTextures.length);
+                    let finalSymbol = createTempSymbol(finalSymbolIndex);
+
+                    // If createTempSymbol returned a texture instead of a sprite/container, wrap it
+                    if (finalSymbol && finalSymbol.baseTexture && !finalSymbol.addChild) {
+                        const spriteWrapper = new Sprite(finalSymbol);
+                        spriteWrapper.width = SYMBOL_WIDTH;
+                        spriteWrapper.height = SYMBOL_HEIGHT;
+                        finalSymbol = spriteWrapper;
+                    }
+
+                    // Check if it's a scatter symbol and start animation
+                    if (finalSymbol.isScatter) {
+                        setTimeout(() => {
+                            startScatterAnimation(finalSymbol);
+                        }, 500);
+                    }
+
+                    finalSymbol.x = 0;
+                    finalSymbol.y = row * (SYMBOL_HEIGHT + SYMBOL_SPACING);
+                    reelContainers[col].addChild(finalSymbol);
+                    slots[col][row] = finalSymbol;
+                }
+
+                console.log(`✅ Column ${col + 1} respawned with new symbols!`);
+            }
+        }, 80); // Faster spin for respawn
     }
 
     function updateBalanceDisplay() {
@@ -528,11 +1024,11 @@ import {
             let spinCount = 0;
             const maxSpins = 20 + (col * 5);
 
-            const willWildSlideHere = walkingWilds.length > 0 && walkingWilds[0].col - 1 === col;
             const isWildCol = walkingWilds.length > 0 && walkingWilds[0].col === col;
+            const willWildSlideHere = walkingWilds.length > 0 && walkingWilds[0].col - 1 === col;
 
             const reelSpin = setInterval(() => {
-                // Don't randomize the destination or current wild column
+                // Skip spinning for current wild column and destination column (they're handled separately)
                 if (isWildCol || willWildSlideHere) {
                     spinCount++;
                     if (spinCount >= maxSpins) {
@@ -541,16 +1037,22 @@ import {
                         if (reelAnimations.filter(stopped => stopped).length === COLS) {
                             isSpinning = false;
                             spinButtonText.text = 'SPIN';
+                            
+                            // Validate slots after spinning
+                            validateAndFixSlots();
+                            
                             const winAmount = Math.floor(Math.random() * currentBet * 3);
                             if (winAmount > 0) {
                                 balance += winAmount;
                                 updateBalanceDisplay();
                                 console.log(`🎉 Win: $${winAmount}!`);
                             }
-                            // Only spawn a wild if there isn't one
-                            if (!animatingWild && walkingWilds.length === 0 && Math.random() < 0.6 && cat5WildTexture) {
+                            // Only spawn a wild if there isn't one (1 in 3 chance)
+                            if (!animatingWild && walkingWilds.length === 0 && Math.random() < 0.33 && cat5WildTexture && catLabels.length === 5) {
                                 const spawnCol = COLS - 1;
-                                walkingWilds = [{ col: spawnCol, stepsRemaining: spawnCol }];
+                                // Random category each time (1–5)
+                                const catCategory = Math.ceil(Math.random() * 5);
+                                walkingWilds = [{ col: spawnCol, stepsRemaining: spawnCol, cat: catCategory }];
                                 startWalkingWildDrop(spawnCol);
                             }
                         }
@@ -559,17 +1061,32 @@ import {
                 }
 
                 for (let row = 0; row < ROWS; row++) {
-                    reelContainers[col].removeChild(slots[col][row]);
-                    const randomSymbolIndex = Math.floor(Math.random() * symbolTextures.length);
-                    const randomTexture = symbolTextures[randomSymbolIndex];
-                    let newSymbol;
-                    if (randomTexture && randomTexture.isScatter) {
-                        newSymbol = createTempSymbol(randomSymbolIndex);
-                    } else {
-                        newSymbol = new Sprite(randomTexture);
-                        newSymbol.width = SYMBOL_WIDTH;
-                        newSymbol.height = SYMBOL_HEIGHT;
+                    if (slots[col][row]) {
+                        reelContainers[col].removeChild(slots[col][row]);
                     }
+                    const randomSymbolIndex = Math.floor(Math.random() * symbolTextures.length);
+                    let newSymbol = createTempSymbol(randomSymbolIndex);
+                    
+                    // If createTempSymbol returned a texture instead of a sprite/container, wrap it
+                    if (newSymbol && newSymbol.baseTexture && !newSymbol.addChild) {
+                        const spriteWrapper = new Sprite(newSymbol);
+                        spriteWrapper.width = SYMBOL_WIDTH;
+                        spriteWrapper.height = SYMBOL_HEIGHT;
+                        newSymbol = spriteWrapper;
+                    }
+                    
+                    // Ensure we have a valid symbol
+                    if (!newSymbol) {
+                        console.warn(`⚠️ Failed to create symbol for index ${randomSymbolIndex}, using fallback`);
+                        newSymbol = createTempSymbol(8); // Use ACE as fallback
+                        if (newSymbol && newSymbol.baseTexture && !newSymbol.addChild) {
+                            const spriteWrapper = new Sprite(newSymbol);
+                            spriteWrapper.width = SYMBOL_WIDTH;
+                            spriteWrapper.height = SYMBOL_HEIGHT;
+                            newSymbol = spriteWrapper;
+                        }
+                    }
+                    
                     newSymbol.x = 0;
                     newSymbol.y = row * (SYMBOL_HEIGHT + SYMBOL_SPACING);
                     reelContainers[col].addChild(newSymbol);
@@ -582,20 +1099,46 @@ import {
                     clearInterval(reelSpin);
 
                     for (let row = 0; row < ROWS; row++) {
-                        reelContainers[col].removeChild(slots[col][row]);
+                        if (slots[col][row]) {
+                            reelContainers[col].removeChild(slots[col][row]);
+                        }
                         const finalSymbolIndex = Math.floor(Math.random() * symbolTextures.length);
-                        const finalTexture = symbolTextures[finalSymbolIndex];
-                        let finalSymbol;
-                        if (finalTexture && finalTexture.isScatter) {
-                            finalSymbol = createTempSymbol(finalSymbolIndex);
+                        let finalSymbol = createTempSymbol(finalSymbolIndex);
+                        
+                        // If createTempSymbol returned a texture instead of a sprite/container, wrap it
+                        if (finalSymbol && finalSymbol.baseTexture && !finalSymbol.addChild) {
+                            const spriteWrapper = new Sprite(finalSymbol);
+                            spriteWrapper.width = SYMBOL_WIDTH;
+                            spriteWrapper.height = SYMBOL_HEIGHT;
+                            finalSymbol = spriteWrapper;
+                        }
+                        
+                        // Ensure we have a valid symbol
+                        if (!finalSymbol) {
+                            console.warn(`⚠️ Failed to create final symbol for index ${finalSymbolIndex}, using fallback`);
+                            finalSymbol = createTempSymbol(8); // Use ACE as fallback
+                            if (finalSymbol && finalSymbol.baseTexture && !finalSymbol.addChild) {
+                                const spriteWrapper = new Sprite(finalSymbol);
+                                spriteWrapper.width = SYMBOL_WIDTH;
+                                spriteWrapper.height = SYMBOL_HEIGHT;
+                                finalSymbol = spriteWrapper;
+                            }
+                        }
+                        
+                        // Check if it's a scatter symbol and start animation
+                        if (finalSymbol.isScatter) {
                             setTimeout(() => {
                                 startScatterAnimation(finalSymbol);
                             }, 500);
-                        } else {
-                            finalSymbol = new Sprite(finalTexture);
-                            finalSymbol.width = SYMBOL_WIDTH;
-                            finalSymbol.height = SYMBOL_HEIGHT;
                         }
+                        
+                        // Check if it's a storm tracker and start pulse
+                        if (finalSymbol.isStormTracker) {
+                            setTimeout(() => {
+                                startStormTrackerPulse(finalSymbol, col, row);
+                            }, 600);
+                        }
+                        
                         finalSymbol.x = 0;
                         finalSymbol.y = row * (SYMBOL_HEIGHT + SYMBOL_SPACING);
                         reelContainers[col].addChild(finalSymbol);
@@ -609,6 +1152,9 @@ import {
                         isSpinning = false;
                         spinButtonText.text = 'SPIN';
 
+                        // Validate slots after spinning
+                        validateAndFixSlots();
+
                         const winAmount = Math.floor(Math.random() * currentBet * 3);
                         if (winAmount > 0) {
                             balance += winAmount;
@@ -616,16 +1162,122 @@ import {
                             console.log(`🎉 Win: $${winAmount}!`);
                         }
 
-                        // For demo: randomly spawn walking wild in rightmost reel if none exists
-                        if (!animatingWild && walkingWilds.length === 0 && Math.random() < 0.6 && cat5WildTexture) {
+                        // Check for storm tracker symbols and trigger pulse animation
+                        setTimeout(() => {
+                            checkForStormTrackers();
+                        }, 1000);
+
+                        // For demo: randomly spawn walking wild in rightmost reel if none exists (reduced chance since we have storm tracker)
+                        if (!animatingWild && walkingWilds.length === 0 && Math.random() < 0.2 && cat5WildTexture && catLabels.length === 5) {
                             const spawnCol = COLS - 1;
-                            walkingWilds = [{ col: spawnCol, stepsRemaining: spawnCol }];
+                            // Random category each time (1–5)
+                            const catCategory = Math.ceil(Math.random() * 5);
+                            walkingWilds = [{ col: spawnCol, stepsRemaining: spawnCol, cat: catCategory }];
                             startWalkingWildDrop(spawnCol);
                         }
                     }
                 }
             }, 100 - (col * 10));
             reelAnimations[col] = false;
+        }
+    }
+
+    // Spawn Storm button for testing
+    const spawnStormButton = new Graphics();
+    spawnStormButton.fill(0xff6b35);
+    spawnStormButton.setStrokeStyle({ color: 0xff8c42, width: 3 });
+    spawnStormButton.roundRect(0, 0, 140, 50, 10);
+    spawnStormButton.fill();
+    spawnStormButton.stroke();
+    spawnStormButton.x = SCREEN_WIDTH - 170;
+    spawnStormButton.y = SCREEN_HEIGHT - 150;
+    spawnStormButton.interactive = true;
+    spawnStormButton.buttonMode = true;
+    uiContainer.addChild(spawnStormButton);
+
+    const spawnStormText = new Text({
+        text: 'SPAWN STORM',
+        style: {
+            fontFamily: 'Arial',
+            fontSize: 16,
+            fontWeight: 'bold',
+            fill: 0xffffff
+        }
+    });
+    spawnStormText.anchor.set(0.5);
+    spawnStormText.x = spawnStormButton.x + 70;
+    spawnStormText.y = spawnStormButton.y + 25;
+    uiContainer.addChild(spawnStormText);
+
+    // Check for storm tracker symbols after spin
+    function checkForStormTrackers() {
+        const stormTrackers = [];
+
+        // Scan all positions for storm tracker symbols
+        for (let col = 0; col < COLS; col++) {
+            for (let row = 0; row < ROWS; row++) {
+                const symbol = slots[col][row];
+                if (symbol && symbol.isStormTracker) {
+                    stormTrackers.push({ symbol, col, row });
+                }
+            }
+        }
+
+        if (stormTrackers.length > 0) {
+            console.log(`🌩️ Found ${stormTrackers.length} storm tracker(s)!`);
+
+            // Start pulse animation for all storm trackers (with slight delays)
+            stormTrackers.forEach((tracker, index) => {
+                setTimeout(() => {
+                    startStormTrackerPulse(tracker.symbol, tracker.col, tracker.row);
+                }, index * 200); // Stagger the pulses
+            });
+        }
+    }
+
+    // Spawn storm function for testing (updated to show storm tracker first)
+    function spawnStorm() {
+        if (animatingWild || walkingWilds.length > 0) {
+            console.log('🌪️ Storm already active!');
+            return;
+        }
+
+        if (!cat5WildTexture || catLabels.length !== 5) {
+            console.log('❌ Storm assets not loaded!');
+            return;
+        }
+
+        // For testing: place a storm tracker first, then trigger it
+        if (stormChaseCatTexture) {
+            console.log('🌩️ Placing storm tracker for demonstration...');
+
+            // Find a random empty spot or replace a symbol
+            const testCol = Math.floor(Math.random() * COLS);
+            const testRow = Math.floor(Math.random() * ROWS);
+
+            // Remove existing symbol
+            if (slots[testCol][testRow]) {
+                reelContainers[testCol].removeChild(slots[testCol][testRow]);
+            }
+
+            // Add storm tracker
+            const stormTracker = createTempSymbol(2); // Index 2 is storm tracker
+            stormTracker.x = 0;
+            stormTracker.y = testRow * (SYMBOL_HEIGHT + SYMBOL_SPACING);
+            reelContainers[testCol].addChild(stormTracker);
+            slots[testCol][testRow] = stormTracker;
+
+            // Start the pulse sequence
+            setTimeout(() => {
+                startStormTrackerPulse(stormTracker, testCol, testRow);
+            }, 500);
+        } else {
+            // Fallback: direct spawn
+            const spawnCol = COLS - 1;
+            const catCategory = Math.ceil(Math.random() * 5);
+            walkingWilds = [{ col: spawnCol, stepsRemaining: spawnCol, cat: catCategory }];
+            console.log(`🌩️ Spawning Cat ${catCategory} hurricane in column ${spawnCol + 1}!`);
+            startWalkingWildDrop(spawnCol);
         }
     }
 
@@ -640,14 +1292,29 @@ import {
         console.log('Spin button clicked!');
     });
 
+    spawnStormButton.on('pointerdown', spawnStorm);
+    spawnStormButton.on('pointerover', () => {
+        spawnStormButton.alpha = 0.8;
+    });
+    spawnStormButton.on('pointerout', () => {
+        spawnStormButton.alpha = 1.0;
+    });
+
     console.log(`
 🌪️ HURRICANE CHASE SLOT MACHINE READY!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-📐 HURRICANE CHASE SPECIFICATIONS:
+� FIXES APPLIED:
+   • Cat 5 Wild (index 13) excluded from regular symbol pool ✅
+   • Blank square validation and auto-repair system ✅
+   • Asset loading paths fixed (no leading slashes) ✅
+   • Improved symbol creation with fallback handling ✅
+
+�📐 HURRICANE CHASE SPECIFICATIONS:
    • Background: Hurricane Chase frame loaded ✅
    • Symbol Size: ${SYMBOL_WIDTH}x${SYMBOL_HEIGHT}px (wider rectangles)
    • Grid Size: ${GRID_WIDTH}x${GRID_HEIGHT}px
+   • Symbol Pool: ${symbolTextures.length} regular symbols (excludes walking wild)
    • Positioned: Center of rectangular slot area
    
 📁 READY FOR YOUR WEATHER-THEMED ASSET PACK:
